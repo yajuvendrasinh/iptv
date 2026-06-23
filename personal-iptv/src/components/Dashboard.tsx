@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import VideoPlayer from './VideoPlayer';
 import Sidebar from './Sidebar';
 import Navbar from './Navbar';
+import defaultFavoriteIds from '../data/favorites-config.json';
 
 interface Channel {
   id: string;
@@ -83,6 +84,7 @@ export default function Dashboard() {
   const [favorites, setFavorites] = useState<Channel[]>([]);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
   const [shareStatus, setShareStatus] = useState<'idle' | 'copied'>('idle');
+  const [copiedId, setCopiedId] = useState(false);
   const [epgData, setEpgData] = useState<{ time: string; title: string; isNow?: boolean }[]>([]);
   const [currentProgress, setCurrentProgress] = useState(42);
 
@@ -162,20 +164,58 @@ export default function Dashboard() {
     }
   };
 
-  // Load favorites and last played channel from local storage on mount
+  // Load favorites and last played channel from local storage / config on mount
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('iptv_favorites');
-      if (stored) {
-        setFavorites(JSON.parse(stored));
+    const loadFavorites = async () => {
+      let customFavs: Channel[] = [];
+      let removedDefaults: string[] = [];
+      try {
+        const storedCustom = localStorage.getItem('iptv_custom_favorites');
+        if (storedCustom) {
+          customFavs = JSON.parse(storedCustom);
+        }
+        const storedRemoved = localStorage.getItem('iptv_removed_defaults');
+        if (storedRemoved) {
+          removedDefaults = JSON.parse(storedRemoved);
+        }
+      } catch (e) {
+        console.error('Failed to load local storage favorites:', e);
       }
 
+      // Load from configuration file, filtering out explicitly removed defaults
+      const activeDefaultIds = defaultFavoriteIds.filter(id => !removedDefaults.includes(id));
+      let defaultFavs: Channel[] = [];
+      if (activeDefaultIds.length > 0) {
+        try {
+          const res = await fetch(`/api/channels?ids=${encodeURIComponent(activeDefaultIds.join(','))}`);
+          if (res.ok) {
+            defaultFavs = await res.json();
+          }
+        } catch (e) {
+          console.error('Failed to fetch default favorites:', e);
+        }
+      }
+
+      // Merge defaults and custom favorites without duplicates (matching by id & countryCode)
+      const merged = [...defaultFavs];
+      for (const custom of customFavs) {
+        if (!merged.some(ch => ch.id === custom.id && ch.countryCode === custom.countryCode)) {
+          merged.push(custom);
+        }
+      }
+
+      setFavorites(merged);
+    };
+
+    loadFavorites();
+
+    try {
       const lastChannel = localStorage.getItem('iptv_last_channel');
       if (lastChannel) {
         setActiveChannel(JSON.parse(lastChannel));
       }
     } catch (e) {
-      console.error('Failed to load local storage data:', e);
+      console.error('Failed to load last channel:', e);
     }
   }, []);
 
@@ -226,16 +266,51 @@ export default function Dashboard() {
 
   // Toggle favorite
   const toggleFavorite = () => {
-    let newFavs = [...favorites];
+    const isDefault = defaultFavoriteIds.includes(activeChannel.id);
+    let storedCustom = localStorage.getItem('iptv_custom_favorites');
+    let customFavs: Channel[] = storedCustom ? JSON.parse(storedCustom) : [];
+    let storedRemoved = localStorage.getItem('iptv_removed_defaults');
+    let removedDefaults: string[] = storedRemoved ? JSON.parse(storedRemoved) : [];
+
     if (isFavorite) {
-      newFavs = newFavs.filter(
-        (ch) => !(ch.id === activeChannel.id && ch.countryCode === activeChannel.countryCode)
-      );
+      // We are unfavoriting the channel
+      if (isDefault) {
+        if (!removedDefaults.includes(activeChannel.id)) {
+          removedDefaults.push(activeChannel.id);
+        }
+      } else {
+        customFavs = customFavs.filter(ch => !(ch.id === activeChannel.id && ch.countryCode === activeChannel.countryCode));
+      }
     } else {
-      newFavs.push(activeChannel);
+      // We are favoriting the channel
+      if (isDefault) {
+        removedDefaults = removedDefaults.filter(id => id !== activeChannel.id);
+      } else {
+        if (!customFavs.some(ch => ch.id === activeChannel.id && ch.countryCode === activeChannel.countryCode)) {
+          customFavs.push(activeChannel);
+        }
+      }
     }
-    setFavorites(newFavs);
-    localStorage.setItem('iptv_favorites', JSON.stringify(newFavs));
+
+    // Save to localStorage
+    localStorage.setItem('iptv_custom_favorites', JSON.stringify(customFavs));
+    localStorage.setItem('iptv_removed_defaults', JSON.stringify(removedDefaults));
+
+    // Recalculate local favorites state
+    const activeDefaultIds = defaultFavoriteIds.filter(id => !removedDefaults.includes(id));
+    const updatedDefaults = favorites.filter(ch => activeDefaultIds.includes(ch.id) && !removedDefaults.includes(ch.id));
+    
+    if (!isFavorite && isDefault && !updatedDefaults.some(ch => ch.id === activeChannel.id)) {
+      updatedDefaults.push(activeChannel);
+    }
+
+    const merged = [...updatedDefaults];
+    for (const custom of customFavs) {
+      if (!merged.some(ch => ch.id === custom.id && ch.countryCode === custom.countryCode)) {
+        merged.push(custom);
+      }
+    }
+    setFavorites(merged);
   };
 
   // Copy share link
@@ -244,6 +319,14 @@ export default function Dashboard() {
     navigator.clipboard.writeText(textToCopy).then(() => {
       setShareStatus('copied');
       setTimeout(() => setShareStatus('idle'), 2000);
+    });
+  };
+
+  // Copy Channel ID
+  const copyChannelId = () => {
+    navigator.clipboard.writeText(activeChannel.id).then(() => {
+      setCopiedId(true);
+      setTimeout(() => setCopiedId(false), 2000);
     });
   };
 
@@ -283,6 +366,14 @@ export default function Dashboard() {
               <span className="flex items-center gap-1">
                 <Shield className="w-3.5 h-3.5" />
                 <span>{activeChannel.category || 'General'}</span>
+              </span>
+              <span 
+                onClick={copyChannelId}
+                className="flex items-center gap-1 cursor-pointer bg-neutral-100 dark:bg-neutral-900 hover:bg-neutral-200 dark:hover:bg-neutral-800 px-2 py-0.5 rounded-full text-[10px] font-mono text-neutral-600 dark:text-neutral-300 transition-colors select-all"
+                title="Click to copy Channel ID"
+              >
+                <span>ID: {activeChannel.id}</span>
+                {copiedId && <span className="text-[9px] text-lime-600 dark:text-lime-400 font-bold ml-1">Copied!</span>}
               </span>
             </div>
           </div>

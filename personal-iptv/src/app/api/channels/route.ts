@@ -8,8 +8,15 @@ export async function GET(request: Request) {
     const category = searchParams.get('category')?.toLowerCase().trim() || '';
     const country = searchParams.get('country')?.toLowerCase().trim() || '';
     const limit = parseInt(searchParams.get('limit') || '50', 10);
+    const idsParam = searchParams.get('ids')?.trim() || '';
 
     let filtered = channelsDb;
+
+    // Apply IDs filter if present
+    if (idsParam) {
+      const ids = idsParam.split(',').map(id => id.trim());
+      filtered = filtered.filter(ch => ids.includes(ch.id));
+    }
 
     // Apply category filter if present
     if (category) {
