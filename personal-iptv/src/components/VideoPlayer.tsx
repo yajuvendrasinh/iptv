@@ -34,9 +34,11 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const [urlIndex, setUrlIndex] = useState(0);
+  const [useProxy, setUseProxy] = useState(false);
 
   // Active URL to play
-  const activeUrl = channel.urls && channel.urls.length > 0 ? channel.urls[urlIndex] : channel.url;
+  const rawUrl = channel.urls && channel.urls.length > 0 ? channel.urls[urlIndex] : channel.url;
+  const activeUrl = useProxy ? `/api/proxy?url=${encodeURIComponent(rawUrl)}` : rawUrl;
 
   const resetControlsTimeout = () => {
     setShowControls(true);
@@ -67,6 +69,7 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
     setIsPlaying(false);
     setHlsError(null);
     setUrlIndex(0);
+    setUseProxy(false);
     if (hlsRef.current) {
       hlsRef.current.destroy();
       hlsRef.current = null;
@@ -83,17 +86,27 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
     }
   }, [channel]);
 
-  // Handle Playback Errors by switching to fallback urls
+  // Handle Playback Errors by trying proxy first, then switching to fallback urls
   const handlePlaybackError = (errorMessage: string) => {
-    console.warn(`Stream playback failed on URL index ${urlIndex} for ${channel.name}:`, errorMessage);
+    console.warn(`Stream playback failed on URL index ${urlIndex} (proxied: ${useProxy}) for ${channel.name}:`, errorMessage);
     
-    if (channel.urls && urlIndex + 1 < channel.urls.length) {
+    // If we haven't tried proxying the current URL, try it now
+    if (!useProxy) {
+      console.warn(`Retrying active URL with CORS proxy...`);
+      setUseProxy(true);
+      return;
+    }
+
+    // If proxy failed, move to next fallback url if available
+    const urls = channel.urls || [];
+    if (urlIndex + 1 < urls.length) {
       const nextIdx = urlIndex + 1;
-      console.warn(`Trying fallback stream URL index ${nextIdx}/${channel.urls.length}...`);
+      console.warn(`Proxy failed. Trying next fallback stream URL index ${nextIdx}/${urls.length}...`);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
+      setUseProxy(false);
       setUrlIndex(nextIdx);
     } else {
       setHlsError('Stream is offline, geo-blocked, or incompatible with your browser.');
@@ -109,17 +122,8 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
 
     setHlsError(null);
 
-    // Safari / iOS Native HLS
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = activeUrl;
-      video.play().catch(err => {
-        if (err.name !== 'AbortError') {
-          handlePlaybackError(err.message || err.name);
-        }
-      });
-    } 
-    // Hls.js library
-    else if (Hls.isSupported()) {
+    // Hls.js library (preferred for standard MSE support on Chrome, Firefox, Edge, etc.)
+    if (Hls.isSupported()) {
       const hls = new Hls({
         maxMaxBufferLength: 10,
         enableWorker: true,
@@ -163,6 +167,16 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
           hlsRef.current = null;
         }
       };
+    } 
+    // Safari / iOS Native HLS fallback (where MSE is not supported but native HLS is)
+    else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.pause();
+      video.src = activeUrl;
+      video.play().catch(err => {
+        if (err.name !== 'AbortError') {
+          handlePlaybackError(err.message || err.name);
+        }
+      });
     } else {
       setHlsError('HLS streaming is not supported in your browser.');
     }
@@ -310,11 +324,10 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
           <video
             ref={videoRef}
             onClick={handlePlayPauseFromVideo}
-            onError={() => {
+            onError={(e) => {
               const video = videoRef.current;
-              if (video && video.error) {
-                setHlsError('Stream is offline, geo-blocked, or incompatible with your browser.');
-              }
+              const errorMsg = video?.error?.message || 'Video element playback error';
+              handlePlaybackError(errorMsg);
             }}
             className="w-full h-full object-contain cursor-pointer"
             playsInline
