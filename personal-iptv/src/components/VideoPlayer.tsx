@@ -288,6 +288,12 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
           <video
             ref={videoRef}
             onClick={handlePlayPauseFromVideo}
+            onError={() => {
+              const video = videoRef.current;
+              if (video && video.error) {
+                setHlsError('Stream is offline, geo-blocked, or incompatible with your browser.');
+              }
+            }}
             className="w-full h-full object-contain cursor-pointer"
             playsInline
           />
