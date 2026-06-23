@@ -83,17 +83,29 @@ export default function Dashboard() {
   const [epgData, setEpgData] = useState<{ time: string; title: string; isNow?: boolean }[]>([]);
   const [currentProgress, setCurrentProgress] = useState(42);
 
-  // Load favorites from local storage on mount
+  // Load favorites and last played channel from local storage on mount
   useEffect(() => {
     try {
       const stored = localStorage.getItem('iptv_favorites');
       if (stored) {
         setFavorites(JSON.parse(stored));
       }
+
+      const lastChannel = localStorage.getItem('iptv_last_channel');
+      if (lastChannel) {
+        setActiveChannel(JSON.parse(lastChannel));
+      }
     } catch (e) {
-      console.error('Failed to load favorites:', e);
+      console.error('Failed to load local storage data:', e);
     }
   }, []);
+
+  // Save active channel to local storage when it changes
+  useEffect(() => {
+    if (activeChannel) {
+      localStorage.setItem('iptv_last_channel', JSON.stringify(activeChannel));
+    }
+  }, [activeChannel]);
 
   // Update mock EPG timeline whenever the channel or system hour changes
   useEffect(() => {
