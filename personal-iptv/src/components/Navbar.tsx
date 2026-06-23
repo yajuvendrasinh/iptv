@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, Settings, Sun, Moon, Tv } from 'lucide-react';
+import { Search, Settings, Sun, Moon, Tv, ListMusic, Radio } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 
@@ -17,9 +17,11 @@ interface Channel {
 
 interface NavbarProps {
   onSelectChannel: (channel: Channel) => void;
+  onOpenPlaylists: () => void;
+  onOpenChannels: () => void;
 }
 
-export default function Navbar({ onSelectChannel }: NavbarProps) {
+export default function Navbar({ onSelectChannel, onOpenPlaylists, onOpenChannels }: NavbarProps) {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Channel[]>([]);
@@ -164,6 +166,30 @@ export default function Navbar({ onSelectChannel }: NavbarProps) {
 
       {/* Right: Theme Toggle & Actions */}
       <div className="flex items-center gap-1.5">
+        {/* Playlists Button */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onOpenPlaylists}
+          className="w-8 h-8 rounded-full text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+          aria-label="Browse playlists"
+          title="Browse Playlists"
+        >
+          <ListMusic className="w-4 h-4" />
+        </Button>
+
+        {/* Channels Button */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onOpenChannels}
+          className="w-8 h-8 rounded-full text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+          aria-label="Browse channels"
+          title="Browse Channels"
+        >
+          <Radio className="w-4 h-4" />
+        </Button>
+
         {/* Theme Switch Button */}
         <Button
           variant="ghost"
