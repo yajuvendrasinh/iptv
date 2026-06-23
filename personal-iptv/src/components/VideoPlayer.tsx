@@ -66,7 +66,8 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
 
   // Reset play state when channel changes
   useEffect(() => {
-    setIsPlaying(false);
+    // Keep isPlaying as true if it was already playing, otherwise it remains false.
+    // This allows seamless autoplay when switching channels.
     setHlsError(null);
     setUrlIndex(0);
     setUseProxy(false);
