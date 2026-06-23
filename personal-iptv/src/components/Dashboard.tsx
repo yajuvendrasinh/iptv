@@ -167,7 +167,7 @@ export default function Dashboard() {
   const matchChannel = (channel: Channel, favId: string) => {
     if (favId.includes('|')) {
       const [id, country] = favId.split('|');
-      return channel.id === id && channel.countryCode.toLowerCase() === country.toLowerCase();
+      return channel.id === id && channel.countryCode?.toLowerCase() === country.toLowerCase();
     }
     return channel.id === favId;
   };
@@ -295,7 +295,7 @@ export default function Dashboard() {
     let storedRemoved = localStorage.getItem('iptv_removed_defaults');
     let removedDefaults: string[] = storedRemoved ? JSON.parse(storedRemoved) : [];
 
-    const activeChannelKey = `${activeChannel.id}|${activeChannel.countryCode}`;
+    const activeChannelKey = `${activeChannel.id}|${activeChannel.countryCode || ''}`;
 
     if (isFavorite) {
       // We are unfavoriting the channel
@@ -327,7 +327,7 @@ export default function Dashboard() {
       if (!favId.includes('|')) {
         const match = favorites.find(ch => ch.id === favId);
         if (match) {
-          targetKey = `${favId}|${match.countryCode}`;
+          targetKey = `${favId}|${match.countryCode || ''}`;
         }
       }
       return !removedDefaults.some(removedKey => {
@@ -340,10 +340,10 @@ export default function Dashboard() {
 
     const updatedDefaults = favorites.filter(ch => {
       return activeDefaultConfigIds.some(favId => matchChannel(ch, favId)) && 
-             !removedDefaults.includes(`${ch.id}|${ch.countryCode}`);
+             !removedDefaults.includes(`${ch.id}|${ch.countryCode || ''}`);
     });
     
-    if (!isFavorite && isDefault && !updatedDefaults.some(ch => ch.id === activeChannel.id && ch.countryCode === activeChannel.countryCode)) {
+    if (!isFavorite && isDefault && !updatedDefaults.some(ch => ch.id === activeChannel.id && ch.countryCode?.toLowerCase() === activeChannel.countryCode?.toLowerCase())) {
       updatedDefaults.push(activeChannel);
     }
 
@@ -365,9 +365,10 @@ export default function Dashboard() {
     });
   };
 
-  // Copy Channel ID
+  // Copy Channel ID (copies the composite key id|countryCode)
   const copyChannelId = () => {
-    navigator.clipboard.writeText(activeChannel.id).then(() => {
+    const compositeKey = `${activeChannel.id}|${activeChannel.countryCode || ''}`;
+    navigator.clipboard.writeText(compositeKey).then(() => {
       setCopiedId(true);
       setTimeout(() => setCopiedId(false), 2000);
     });
@@ -413,9 +414,9 @@ export default function Dashboard() {
               <span 
                 onClick={copyChannelId}
                 className="flex items-center gap-1 cursor-pointer bg-neutral-100 dark:bg-neutral-900 hover:bg-neutral-200 dark:hover:bg-neutral-800 px-2 py-0.5 rounded-full text-[10px] font-mono text-neutral-600 dark:text-neutral-300 transition-colors select-all"
-                title="Click to copy Channel ID"
+                title="Click to copy Channel ID with Country suffix"
               >
-                <span>ID: {activeChannel.id}</span>
+                <span>ID: {activeChannel.id}|{activeChannel.countryCode || ''}</span>
                 {copiedId && <span className="text-[9px] text-lime-600 dark:text-lime-400 font-bold ml-1">Copied!</span>}
               </span>
             </div>
