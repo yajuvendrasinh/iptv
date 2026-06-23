@@ -164,9 +164,24 @@ export default function Dashboard() {
     }
   };
 
+  const matchChannel = (channel: Channel, favId: string) => {
+    if (favId.includes('|')) {
+      const [id, country] = favId.split('|');
+      return channel.id === id && channel.countryCode.toLowerCase() === country.toLowerCase();
+    }
+    return channel.id === favId;
+  };
+
   // Load favorites and last played channel from local storage / config on mount
   useEffect(() => {
     const loadFavorites = async () => {
+      // Cleanup obsolete key to ensure clear states
+      try {
+        if (localStorage.getItem('iptv_favorites')) {
+          localStorage.removeItem('iptv_favorites');
+        }
+      } catch (e) {}
+
       let customFavs: Channel[] = [];
       let removedDefaults: string[] = [];
       try {
@@ -183,7 +198,15 @@ export default function Dashboard() {
       }
 
       // Load from configuration file, filtering out explicitly removed defaults
-      const activeDefaultIds = defaultFavoriteIds.filter(id => !removedDefaults.includes(id));
+      const activeDefaultIds = defaultFavoriteIds.filter(favId => {
+        return !removedDefaults.some(removedKey => {
+          if (removedKey.includes('|')) {
+            return favId.toLowerCase() === removedKey.toLowerCase();
+          }
+          return favId.split('|')[0] === removedKey;
+        });
+      });
+
       let defaultFavs: Channel[] = [];
       if (activeDefaultIds.length > 0) {
         try {
@@ -266,17 +289,19 @@ export default function Dashboard() {
 
   // Toggle favorite
   const toggleFavorite = () => {
-    const isDefault = defaultFavoriteIds.includes(activeChannel.id);
+    const isDefault = defaultFavoriteIds.some(favId => matchChannel(activeChannel, favId));
     let storedCustom = localStorage.getItem('iptv_custom_favorites');
     let customFavs: Channel[] = storedCustom ? JSON.parse(storedCustom) : [];
     let storedRemoved = localStorage.getItem('iptv_removed_defaults');
     let removedDefaults: string[] = storedRemoved ? JSON.parse(storedRemoved) : [];
 
+    const activeChannelKey = `${activeChannel.id}|${activeChannel.countryCode}`;
+
     if (isFavorite) {
       // We are unfavoriting the channel
       if (isDefault) {
-        if (!removedDefaults.includes(activeChannel.id)) {
-          removedDefaults.push(activeChannel.id);
+        if (!removedDefaults.includes(activeChannelKey)) {
+          removedDefaults.push(activeChannelKey);
         }
       } else {
         customFavs = customFavs.filter(ch => !(ch.id === activeChannel.id && ch.countryCode === activeChannel.countryCode));
@@ -284,7 +309,7 @@ export default function Dashboard() {
     } else {
       // We are favoriting the channel
       if (isDefault) {
-        removedDefaults = removedDefaults.filter(id => id !== activeChannel.id);
+        removedDefaults = removedDefaults.filter(key => key !== activeChannelKey);
       } else {
         if (!customFavs.some(ch => ch.id === activeChannel.id && ch.countryCode === activeChannel.countryCode)) {
           customFavs.push(activeChannel);
@@ -297,10 +322,28 @@ export default function Dashboard() {
     localStorage.setItem('iptv_removed_defaults', JSON.stringify(removedDefaults));
 
     // Recalculate local favorites state
-    const activeDefaultIds = defaultFavoriteIds.filter(id => !removedDefaults.includes(id));
-    const updatedDefaults = favorites.filter(ch => activeDefaultIds.includes(ch.id) && !removedDefaults.includes(ch.id));
+    const activeDefaultConfigIds = defaultFavoriteIds.filter(favId => {
+      let targetKey = favId;
+      if (!favId.includes('|')) {
+        const match = favorites.find(ch => ch.id === favId);
+        if (match) {
+          targetKey = `${favId}|${match.countryCode}`;
+        }
+      }
+      return !removedDefaults.some(removedKey => {
+        if (removedKey.includes('|')) {
+          return targetKey.toLowerCase() === removedKey.toLowerCase();
+        }
+        return targetKey.split('|')[0] === removedKey;
+      });
+    });
+
+    const updatedDefaults = favorites.filter(ch => {
+      return activeDefaultConfigIds.some(favId => matchChannel(ch, favId)) && 
+             !removedDefaults.includes(`${ch.id}|${ch.countryCode}`);
+    });
     
-    if (!isFavorite && isDefault && !updatedDefaults.some(ch => ch.id === activeChannel.id)) {
+    if (!isFavorite && isDefault && !updatedDefaults.some(ch => ch.id === activeChannel.id && ch.countryCode === activeChannel.countryCode)) {
       updatedDefaults.push(activeChannel);
     }
 

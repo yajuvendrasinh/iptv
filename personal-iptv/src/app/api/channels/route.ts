@@ -12,10 +12,18 @@ export async function GET(request: Request) {
 
     let filtered = channelsDb;
 
-    // Apply IDs filter if present
+    // Apply IDs filter if present (supports composite "id|countryCode")
     if (idsParam) {
       const ids = idsParam.split(',').map(id => id.trim());
-      filtered = filtered.filter(ch => ids.includes(ch.id));
+      filtered = filtered.filter(ch => {
+        return ids.some(idVal => {
+          if (idVal.includes('|')) {
+            const [targetId, targetCountry] = idVal.split('|');
+            return ch.id === targetId && ch.countryCode.toLowerCase() === targetCountry.toLowerCase();
+          }
+          return ch.id === idVal;
+        });
+      });
     }
 
     // Apply category filter if present
