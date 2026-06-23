@@ -29,6 +29,32 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
   const [volume, setVolume] = useState(80);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hlsError, setHlsError] = useState<string | null>(null);
+  const [showControls, setShowControls] = useState(true);
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const resetControlsTimeout = () => {
+    setShowControls(true);
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    const video = videoRef.current;
+    if (video && !video.paused) {
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
+    }
+  };
+
+  useEffect(() => {
+    if (isPlaying) {
+      resetControlsTimeout();
+    }
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    };
+  }, [isPlaying]);
 
   // Reset play state when channel changes
   useEffect(() => {
@@ -203,6 +229,13 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
   return (
     <div 
       ref={containerRef}
+      onMouseMove={resetControlsTimeout}
+      onMouseLeave={() => {
+        const video = videoRef.current;
+        if (video && !video.paused) {
+          setShowControls(false);
+        }
+      }}
       className="group relative w-full aspect-video bg-neutral-950 rounded-xl overflow-hidden border border-neutral-200 dark:border-neutral-800 shadow-md select-none"
     >
       {/* 1. idle Poster (Logo & Click-to-Play state) */}
@@ -279,19 +312,25 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
           )}
 
           {/* Live Badge Top-Left */}
-          <div className="absolute top-4 left-4 flex items-center gap-1.5 px-2.5 py-1 rounded bg-red-600 text-white text-xs font-semibold uppercase tracking-wider select-none pointer-events-none">
+          <div className={`absolute top-4 left-4 flex items-center gap-1.5 px-2.5 py-1 rounded bg-red-600 text-white text-xs font-semibold uppercase tracking-wider select-none pointer-events-none transition-opacity duration-300 ${
+            showControls ? 'opacity-100' : 'opacity-0'
+          }`}>
             <Circle className="w-2 h-2 fill-white animate-pulse" />
             Live
           </div>
 
           {/* Stream Overlay Info Top-Right */}
-          <div className="absolute top-4 right-4 text-right pointer-events-none drop-shadow-md">
+          <div className={`absolute top-4 right-4 text-right pointer-events-none drop-shadow-md transition-opacity duration-300 ${
+            showControls ? 'opacity-100' : 'opacity-0'
+          }`}>
             <div className="text-xs text-white/90 font-medium">{channel.name}</div>
             <div className="text-[10px] text-white/60 mt-0.5">{channel.category || 'General'}</div>
           </div>
 
-          {/* Controls Bar Overlay (Visible on Hover) */}
-          <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-250 flex flex-col gap-3">
+          {/* Controls Bar Overlay */}
+          <div className={`absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-4 flex flex-col gap-3 transition-opacity duration-300 ${
+            showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}>
             
             {/* Minimal Progress Bar (Purely Visual for Live Stream) */}
             <div className="w-full h-1 bg-white/20 rounded-full overflow-hidden">
