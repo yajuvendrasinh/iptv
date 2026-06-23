@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 
-// Mappings for popular country codes
 const countryNameMap = {
   'ad': 'Andorra', 'ae': 'United Arab Emirates', 'af': 'Afghanistan', 'ag': 'Antigua and Barbuda',
   'al': 'Albania', 'am': 'Armenia', 'ao': 'Angola', 'ar': 'Argentina', 'at': 'Austria',
@@ -62,8 +61,7 @@ const allChannels = [];
 let uniqueIdCounter = 0;
 
 for (const filename of m3uFiles) {
-  // Extract country code from filename (e.g., 'ae.m3u' -> 'ae')
-  const countryCode = filename.split('.')[0].split('_')[0]; // Handle cases like us_pluto.m3u
+  const countryCode = filename.split('.')[0].split('_')[0];
   const countryName = countryNameMap[countryCode] || countryCode.toUpperCase();
   
   const filePath = path.join(STREAMS_DIR, filename);
@@ -77,13 +75,10 @@ for (const filename of m3uFiles) {
     if (!line) continue;
     
     if (line.startsWith('#EXTINF:')) {
-      // Parse info
-      // Format: #EXTINF:-1 tvg-id="AjmanTV.ae@SD" tvg-logo="url" group-title="News",Ajman TV (1080p)
       const commaIndex = line.lastIndexOf(',');
       const infoPart = line.substring(0, commaIndex);
       const channelName = commaIndex !== -1 ? line.substring(commaIndex + 1).trim() : 'Unknown Channel';
       
-      // Match attributes using regex
       const idMatch = infoPart.match(/tvg-id="([^"]+)"/);
       const logoMatch = infoPart.match(/tvg-logo="([^"]+)"/);
       const groupMatch = infoPart.match(/group-title="([^"]+)"/);
@@ -99,19 +94,24 @@ for (const filename of m3uFiles) {
         category,
         countryCode,
         countryName,
-        url: ''
+        url: '',
+        urls: []
       };
     } else if (line.startsWith('#')) {
-      // Skip comments or VLC options like #EXTVLCOPT
       continue;
     } else if (line.startsWith('http://') || line.startsWith('https://')) {
-      // It's a stream URL
       if (currentChannel) {
         currentChannel.url = line;
+        currentChannel.urls = [line];
         
-        // Skip duplicate streams for the same channel to keep size small
-        const isDuplicate = allChannels.some(ch => ch.id === currentChannel.id && ch.countryCode === currentChannel.countryCode);
-        if (!isDuplicate) {
+        // Find existing channel entry for the same ID + Country
+        const existing = allChannels.find(ch => ch.id === currentChannel.id && ch.countryCode === currentChannel.countryCode);
+        if (existing) {
+          // If channel exists, add this URL as a fallback (avoiding duplicates)
+          if (!existing.urls.includes(line)) {
+            existing.urls.push(line);
+          }
+        } else {
           allChannels.push(currentChannel);
         }
         currentChannel = null;
@@ -120,8 +120,13 @@ for (const filename of m3uFiles) {
   }
 }
 
-console.log(`Parsed ${allChannels.length} channels in total.`);
+console.log(`Parsed ${allChannels.length} unique channels in total.`);
 
-// Save to disk
+// Print out Aaj Tak stats as verification
+const aajTak = allChannels.find(ch => ch.id.startsWith('AajTak'));
+if (aajTak) {
+  console.log(`Aaj Tak compile stats: found ${aajTak.urls.length} fallback stream URLs.`);
+}
+
 fs.writeFileSync(OUTPUT_FILE, JSON.stringify(allChannels, null, 2), 'utf-8');
 console.log(`Successfully wrote ${allChannels.length} channels to ${OUTPUT_FILE}`);

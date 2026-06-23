@@ -9,6 +9,7 @@ interface Channel {
   id: string;
   name: string;
   url: string;
+  urls?: string[]; // fallback streams list
   logo?: string | null;
   category?: string;
   countryCode?: string;
@@ -31,6 +32,11 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
   const [hlsError, setHlsError] = useState<string | null>(null);
   const [showControls, setShowControls] = useState(true);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const [urlIndex, setUrlIndex] = useState(0);
+
+  // Active URL to play
+  const activeUrl = channel.urls && channel.urls.length > 0 ? channel.urls[urlIndex] : channel.url;
 
   const resetControlsTimeout = () => {
     setShowControls(true);
@@ -60,6 +66,7 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
   useEffect(() => {
     setIsPlaying(false);
     setHlsError(null);
+    setUrlIndex(0);
     if (hlsRef.current) {
       hlsRef.current.destroy();
       hlsRef.current = null;
@@ -71,14 +78,31 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
         video.removeAttribute('src');
         video.load();
       } catch (e) {
-        // Ignore reset-related media exceptions
+        // Ignore reset-related exceptions
       }
     }
   }, [channel]);
 
+  // Handle Playback Errors by switching to fallback urls
+  const handlePlaybackError = (errorMessage: string) => {
+    console.warn(`Stream playback failed on URL index ${urlIndex} for ${channel.name}:`, errorMessage);
+    
+    if (channel.urls && urlIndex + 1 < channel.urls.length) {
+      const nextIdx = urlIndex + 1;
+      console.warn(`Trying fallback stream URL index ${nextIdx}/${channel.urls.length}...`);
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+      setUrlIndex(nextIdx);
+    } else {
+      setHlsError('Stream is offline, geo-blocked, or incompatible with your browser.');
+    }
+  };
+
   // Handle video playback and HLS loading
   useEffect(() => {
-    if (!isPlaying) return;
+    if (!isPlaying || !activeUrl) return;
 
     const video = videoRef.current;
     if (!video) return;
@@ -87,14 +111,11 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
 
     // Safari / iOS Native HLS
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = channel.url;
+      video.src = activeUrl;
       video.play().catch(err => {
-        if (err.name !== 'AbortError' && err.name !== 'NotSupportedError') {
-          console.error('Playback error:', err);
-        } else {
-          console.warn('Native playback warning:', err.message);
+        if (err.name !== 'AbortError') {
+          handlePlaybackError(err.message || err.name);
         }
-        setHlsError('Stream is offline, geo-blocked, or incompatible with your browser.');
       });
     } 
     // Hls.js library
@@ -105,17 +126,13 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
       });
       hlsRef.current = hls;
 
-      hls.loadSource(channel.url);
+      hls.loadSource(activeUrl);
       hls.attachMedia(video);
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         video.play().catch(err => {
-          if (err.name !== 'AbortError' && err.name !== 'NotSupportedError') {
-            console.error('HLS Playback error:', err);
-            setHlsError('Playback blocked. Click to play.');
-          } else {
-            console.warn('HLS playback warning:', err.message);
-            setHlsError('Stream is offline, geo-blocked, or incompatible with your browser.');
+          if (err.name !== 'AbortError') {
+            handlePlaybackError(err.message || err.name);
           }
         });
       });
@@ -124,8 +141,8 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              console.warn('Fatal network error, trying to recover...');
-              hls.startLoad();
+              console.warn('Fatal network HLS error. Attempting fallback stream...');
+              handlePlaybackError(data.details);
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
               console.warn('Fatal media error, trying to recover...');
@@ -133,7 +150,7 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
               break;
             default:
               console.error('Fatal HLS error:', data);
-              setHlsError('Stream offline or incompatible formats.');
+              handlePlaybackError(data.details);
               hls.destroy();
               break;
           }
@@ -149,7 +166,7 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
     } else {
       setHlsError('HLS streaming is not supported in your browser.');
     }
-  }, [isPlaying, channel.url]);
+  }, [isPlaying, activeUrl]);
 
   // Volume control
   useEffect(() => {
