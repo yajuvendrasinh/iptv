@@ -36,8 +36,20 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
   const [urlIndex, setUrlIndex] = useState(0);
   const [useProxy, setUseProxy] = useState(false);
 
+  // Prioritize HTTPS URLs over HTTP URLs to avoid mixed content blockages and raw IP timeouts
+  const sortedUrls = (() => {
+    const urls = channel.urls && channel.urls.length > 0 ? [...channel.urls] : [channel.url];
+    return urls.sort((a, b) => {
+      const aIsHttps = a.startsWith('https://');
+      const bIsHttps = b.startsWith('https://');
+      if (aIsHttps && !bIsHttps) return -1;
+      if (!aIsHttps && bIsHttps) return 1;
+      return 0;
+    });
+  })();
+
   // Active URL to play
-  const rawUrl = channel.urls && channel.urls.length > 0 ? channel.urls[urlIndex] : channel.url;
+  const rawUrl = sortedUrls[urlIndex];
   const activeUrl = useProxy ? `/api/proxy?url=${encodeURIComponent(rawUrl)}` : rawUrl;
 
   const resetControlsTimeout = () => {
@@ -99,10 +111,9 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
     }
 
     // If proxy failed, move to next fallback url if available
-    const urls = channel.urls || [];
-    if (urlIndex + 1 < urls.length) {
+    if (urlIndex + 1 < sortedUrls.length) {
       const nextIdx = urlIndex + 1;
-      console.warn(`Proxy failed. Trying next fallback stream URL index ${nextIdx}/${urls.length}...`);
+      console.warn(`Proxy failed. Trying next fallback stream URL index ${nextIdx}/${sortedUrls.length}...`);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -128,6 +139,8 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
       const hls = new Hls({
         maxMaxBufferLength: 10,
         enableWorker: true,
+        manifestLoadingTimeOut: 3500, // 3.5s timeout for faster fallback detection on dead streams
+        levelLoadingTimeOut: 3500,
       });
       hlsRef.current = hls;
 
