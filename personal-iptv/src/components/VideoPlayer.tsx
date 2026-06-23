@@ -89,10 +89,12 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = channel.url;
       video.play().catch(err => {
-        if (err.name !== 'AbortError') {
+        if (err.name !== 'AbortError' && err.name !== 'NotSupportedError') {
           console.error('Playback error:', err);
-          setHlsError('Failed to load stream. Please try again.');
+        } else {
+          console.warn('Native playback warning:', err.message);
         }
+        setHlsError('Stream is offline, geo-blocked, or incompatible with your browser.');
       });
     } 
     // Hls.js library
@@ -108,9 +110,12 @@ export default function VideoPlayer({ channel }: VideoPlayerProps) {
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         video.play().catch(err => {
-          if (err.name !== 'AbortError') {
+          if (err.name !== 'AbortError' && err.name !== 'NotSupportedError') {
             console.error('HLS Playback error:', err);
             setHlsError('Playback blocked. Click to play.');
+          } else {
+            console.warn('HLS playback warning:', err.message);
+            setHlsError('Stream is offline, geo-blocked, or incompatible with your browser.');
           }
         });
       });
